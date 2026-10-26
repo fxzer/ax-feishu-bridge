@@ -356,7 +356,7 @@ export function buildWorkspaceCard(
   if (browsePath !== currentWorkspace) {
     navActions.push({
       tag: "button",
-      text: { tag: "plain_text", content: "🎯 设此目录为工作区" },
+      text: { tag: "plain_text", content: "设此目录为工作区" },
       type: "primary",
       value: {
         action: "pi_feishu_select_workspace",
@@ -371,10 +371,10 @@ export function buildWorkspaceCard(
   }
 
   const bookmarks = [
-    { label: "🏠 ~ 主目录", path: home },
-    { label: "📦 ~/m", path: join(home, "m") },
-    { label: "💼 ~/w", path: join(home, "w") },
-    { label: "📖 ~/n", path: join(home, "n") },
+    { label: "🏠 主目录", path: home },
+    { label: "~/m", path: join(home, "m") },
+    { label: "~/w", path: join(home, "w") },
+    { label: "~/n", path: join(home, "n") },
   ].filter((b) => b.path === home || existsSync(b.path));
 
   if (bookmarks.length > 0) {
@@ -405,7 +405,7 @@ export function buildWorkspaceCard(
           tag: "button",
           text: {
             tag: "plain_text",
-            content: `${isCurrent ? "✓ " : "📁 "}${name}`,
+            content: isCurrent ? `${name} (当前)` : name,
           },
           type: isCurrent ? "primary" : "default",
           value: {
