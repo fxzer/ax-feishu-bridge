@@ -7,10 +7,13 @@ import {
   buildModelCard,
   buildResumeCard,
   buildThinkingCard,
+  buildWorkspaceCard,
   parseModelActionValue,
   parseResumePageActionValue,
   parseResumeSelectActionValue,
   parseThinkingActionValue,
+  parseWorkspaceNavActionValue,
+  parseWorkspaceSelectActionValue,
 } from "./cards.ts";
 import { debugLog } from "./debug.ts";
 import { parseStopTaskActionValue } from "./reply-card.ts";
@@ -67,6 +70,20 @@ export function createCardActionHandler(
     if (resumePage) {
       const page = await conversations.listResumeSessions(resumePage.key, resumePage.scope, resumePage.page);
       return buildResumeCard(page);
+    }
+
+    const wsNav = parseWorkspaceNavActionValue(action.value);
+    if (wsNav) {
+      const current = conversations.getWorkspace(wsNav.key);
+      return buildWorkspaceCard(wsNav.key, current, wsNav.path, wsNav.page);
+    }
+
+    const wsSelect = parseWorkspaceSelectActionValue(action.value);
+    if (wsSelect) {
+      await conversations.switchWorkspace(wsSelect.key, wsSelect.path, async (reply) => {
+        await transport?.replyText(action.messageId, reply);
+      });
+      return buildWorkspaceCard(wsSelect.key, wsSelect.path, wsSelect.path, wsSelect.page);
     }
 
     const resumeSelect = parseResumeSelectActionValue(action.value);

@@ -1,3 +1,6 @@
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { type ThinkingStatus } from "./thinking.ts";
 import type { RuntimeModel } from "./runtime.ts";
 
@@ -282,5 +285,203 @@ function sharedCardConfig() {
   return {
     wide_screen_mode: true,
     update_multi: true,
+  };
+}
+
+function listSubdirectories(dir: string): string[] {
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    return entries
+      .filter((entry) => {
+        if (entry.name.startsWith(".")) return false;
+        try {
+          if (entry.isDirectory()) return true;
+          if (entry.isSymbolicLink()) {
+            return statSync(join(dir, entry.name)).isDirectory();
+          }
+        } catch {
+          return false;
+        }
+        return false;
+      })
+      .map((e) => e.name)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  } catch {
+    return [];
+  }
+}
+
+export function buildWorkspaceCard(
+  key: string,
+  currentWorkspace: string,
+  browsePath: string = currentWorkspace,
+  page: number = 0,
+) {
+  const subdirs = listSubdirectories(browsePath);
+  const PAGE_SIZE = 8;
+  const total = subdirs.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const clampedPage = Math.min(Math.max(0, page), totalPages - 1);
+  const paged = subdirs.slice(clampedPage * PAGE_SIZE, (clampedPage + 1) * PAGE_SIZE);
+
+  const home = homedir();
+  const elements: any[] = [
+    {
+      tag: "markdown",
+      content: [
+        `当前工作区：**${escapeMarkdown(currentWorkspace)}**`,
+        browsePath !== currentWorkspace ? `正在浏览：\`${escapeMarkdown(browsePath)}\`` : "",
+        total > 0
+          ? `子文件夹（第 **${clampedPage + 1} / ${totalPages}** 页，共 **${total}** 个）：\n点击任意文件夹即可直接切换。`
+          : "当前目录下没有可见子文件夹。",
+      ].filter(Boolean).join("\n"),
+    },
+  ];
+
+  const navActions: any[] = [];
+  const parentDir = dirname(browsePath);
+  if (parentDir !== browsePath) {
+    navActions.push({
+      tag: "button",
+      text: { tag: "plain_text", content: "⬆️ 上一级" },
+      type: "default",
+      value: {
+        action: "pi_feishu_workspace_nav",
+        key,
+        path: parentDir,
+        page: 0,
+      },
+    });
+  }
+  if (browsePath !== currentWorkspace) {
+    navActions.push({
+      tag: "button",
+      text: { tag: "plain_text", content: "🎯 设此目录为工作区" },
+      type: "primary",
+      value: {
+        action: "pi_feishu_select_workspace",
+        key,
+        path: browsePath,
+        page: 0,
+      },
+    });
+  }
+  if (navActions.length > 0) {
+    elements.push({ tag: "action", actions: navActions });
+  }
+
+  const bookmarks = [
+    { label: "🏠 ~ 主目录", path: home },
+    { label: "📦 ~/m", path: join(home, "m") },
+    { label: "💼 ~/w", path: join(home, "w") },
+    { label: "📖 ~/n", path: join(home, "n") },
+  ].filter((b) => b.path === home || existsSync(b.path));
+
+  if (bookmarks.length > 0) {
+    elements.push({
+      tag: "action",
+      actions: bookmarks.map((b) => ({
+        tag: "button",
+        text: { tag: "plain_text", content: b.label },
+        type: browsePath === b.path ? "primary" : "default",
+        value: {
+          action: "pi_feishu_workspace_nav",
+          key,
+          path: b.path,
+          page: 0,
+        },
+      })),
+    });
+  }
+
+  for (let i = 0; i < paged.length; i += 2) {
+    const row = paged.slice(i, i + 2);
+    elements.push({
+      tag: "action",
+      actions: row.map((name) => {
+        const fullPath = join(browsePath, name);
+        const isCurrent = fullPath === currentWorkspace;
+        return {
+          tag: "button",
+          text: {
+            tag: "plain_text",
+            content: `${isCurrent ? "✓ " : "📁 "}${name}`,
+          },
+          type: isCurrent ? "primary" : "default",
+          value: {
+            action: "pi_feishu_select_workspace",
+            key,
+            path: fullPath,
+            page: 0,
+          },
+        };
+      }),
+    });
+  }
+
+  if (totalPages > 1) {
+    const pageActions: any[] = [];
+    if (clampedPage > 0) {
+      pageActions.push({
+        tag: "button",
+        text: { tag: "plain_text", content: "⬅️ 上一页" },
+        type: "default",
+        value: {
+          action: "pi_feishu_workspace_nav",
+          key,
+          path: browsePath,
+          page: clampedPage - 1,
+        },
+      });
+    }
+    if (clampedPage < totalPages - 1) {
+      pageActions.push({
+        tag: "button",
+        text: { tag: "plain_text", content: "下一页 ➡️" },
+        type: "default",
+        value: {
+          action: "pi_feishu_workspace_nav",
+          key,
+          path: browsePath,
+          page: clampedPage + 1,
+        },
+      });
+    }
+    if (pageActions.length > 0) {
+      elements.push({ tag: "action", actions: pageActions });
+    }
+  }
+
+  return {
+    config: sharedCardConfig(),
+    header: {
+      template: "turquoise",
+      title: { tag: "plain_text", content: "选择工作区目录" },
+    },
+    elements,
+  };
+}
+
+export function parseWorkspaceSelectActionValue(value: unknown): { key: string; path: string; page: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as any;
+  if (raw.action !== "pi_feishu_select_workspace") return undefined;
+  if (typeof raw.key !== "string" || typeof raw.path !== "string") return undefined;
+  return {
+    key: raw.key,
+    path: raw.path,
+    page: typeof raw.page === "number" && Number.isFinite(raw.page) ? Math.max(0, Math.floor(raw.page)) : 0,
+  };
+}
+
+export function parseWorkspaceNavActionValue(value: unknown): { key: string; path: string; page: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as any;
+  if (raw.action !== "pi_feishu_workspace_nav") return undefined;
+  if (typeof raw.key !== "string" || typeof raw.path !== "string") return undefined;
+  return {
+    key: raw.key,
+    path: raw.path,
+    page: typeof raw.page === "number" && Number.isFinite(raw.page) ? Math.max(0, Math.floor(raw.page)) : 0,
   };
 }

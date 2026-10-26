@@ -1,5 +1,5 @@
 import { detectCodeLanguage, decodeTextFile, detectImageMime, type FeishuImageInput, isSupportedImageMime, isSupportedTextFile } from "./attachments.ts";
-import { buildModelCard, buildResumeCard, buildThinkingCard } from "./cards.ts";
+import { buildModelCard, buildResumeCard, buildThinkingCard, buildWorkspaceCard } from "./cards.ts";
 import type { ConversationRuntime } from "./runtime.ts";
 import { claimFeishuMessage, markFeishuMessage } from "./dedupe-store.ts";
 import { debugLog } from "./debug.ts";
@@ -212,9 +212,14 @@ export class FeishuMessageHandler {
     }
 
     if (command.name === "workspace") {
-      await this.conversations.switchWorkspace(key, command.path, async (reply) => {
-        await transport.replyText(msg.messageId, reply);
-      });
+      if (command.path) {
+        await this.conversations.switchWorkspace(key, command.path, async (reply) => {
+          await transport.replyText(msg.messageId, reply);
+        });
+        return true;
+      }
+      const current = this.conversations.getWorkspace(key);
+      await transport.replyCard(msg.messageId, buildWorkspaceCard(key, current));
       return true;
     }
 
